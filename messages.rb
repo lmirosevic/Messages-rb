@@ -1,0 +1,561 @@
+#foo implement object verification
+
+class Hash
+	def symbolize_keys_deep!
+		self.inject({}) do |result, (key, value)|
+			new_key = case key
+				when String then key.to_sym
+				else key
+				end
+			new_value = case value
+				when Hash then symbolize_keys(value)
+				else value
+				end
+			result[new_key] = new_value
+			result
+		end
+	end
+end
+
+module Syncable
+	attr_accessor :last_hash
+
+	def synced?
+		self.last_hash == self.serialize.hash
+	end
+
+	def did_sync
+		self.last_hash = self.serialize.hash
+	end
+end
+
+module Goonbee
+	module Messages
+		require 'mongo'
+		require 'json'
+		require 'bson'
+		require 'time'
+
+		class Manager
+			class << self
+				attr_reader :db, :messages, :collections, :connected
+				attr_accessor :notifications_object
+				alias_method :register_notifications_object, :notifications_object=
+				alias_method :no, :notifications_object
+
+				def connect(database)
+					@db = database
+					@messages = @db.collection('messages')
+					@collections = @db.collection('collections')
+					@connected = true
+				end
+
+				def cache
+					#lazy
+					@cache = Hash.new unless @cache
+
+					@cache
+				end
+
+				def add_to_cache(id, item)
+					unless in_cache?(id)
+						cache[id] = item
+					end
+				end
+
+				def remove_from_cache(id)
+					if in_cache?(id)
+						cache.delete(id)
+					end
+				end
+
+				def in_cache?(id)
+					cache.has_key?(id)
+				end
+
+				def get_from_cache(id)
+					if in_cache?(id)
+						cache[id]
+					end
+				end
+
+			end
+		end
+
+
+		class Item
+			def self.new(*args, &block)
+				#check if it has an id field and if that is in the cahce
+				if (args[0].is_a?(Hash)) && (id = args[0][:_id ] || args[0][:id]) && (Manager.in_cache?(id))#foo might be an array even with 1 arg or not...
+					#return the cached object
+					Manager.get_from_cache(id)
+				else
+					#create a new one
+					new_object = self.allocate
+					new_object.send(:initialize, *args, &block)
+
+					#store it in the cache
+					id = new_object.id
+					Manager.add_to_cache(id, new_object) unless id.nil?
+
+					#return it
+					new_object
+				end
+			end
+
+			def self.new_fault(id)
+				new(:id => id, :fault => true)
+			end
+
+			def self.load_from_server(id)
+				new_fault(id).load_from_server
+			end
+
+			def load_from_server
+				return self unless fault?
+				Manager.connected or raise('Manager not connected')
+
+				if self.id && (document = _load_from_server(self.id))
+					initialize(document.symbolize_keys_deep!.merge({:fault => false}))
+					did_sync
+					self
+				else
+					raise("No such item for id: #{id}")
+				end
+			end
+
+			def initialize(opts={})
+				@changes = []
+			end
+
+			def fault?
+				@fault
+			end
+
+		protected
+			def fault=(fault)
+				@fault = fault
+		end
+
+		attr_accessor :changes
+			def _observe(what, details=nil)
+		  if (what != :updated) || (!changes.any? {|i| i.key?(:created)})
+			 changes.push({what => details})
+		  end
+			end
+		end
+
+
+		class Collection < Item
+			include Syncable
+
+			attr_accessor :type, :meta
+			attr_reader :id, :created_date, :updated_date
+
+			def initialize(opts={})
+				#create a new one
+				super
+				@id = opts[:_id ] || opts[:id] || nil
+				@type = opts[:type] || nil
+				@meta = opts[:meta] || nil
+				@messages = opts[:messages] ? opts[:messages].map do |i|
+					if i.kind_of?(String)
+						Message.new_fault(i)
+					elsif i.kind_of?(Message)
+						i
+					end
+				end : nil
+				@created_date = opts[:createdDate] || nil
+				@updated_date = opts[:updatedDate] || nil
+
+				self.fault = opts[:fault]
+
+				self
+			end
+
+			def self.create(opts={})
+				#set some defaults if needed
+				opts[:_id] ||= BSON::ObjectId.new.to_s
+				opts[:type] ||= 'None'
+				opts[:messages] ||= []
+				opts[:createdDate] ||= Time.now.utc.iso8601
+
+				new_object = new(opts.merge({:fault=>false}))
+				new_object.send(:_observe, :created)
+				new_object
+			end
+
+			def save
+				Manager.connected or raise('Manager not connected')
+
+				#only save it if it's not a fault
+				if !fault? && !synced?
+					#set updated field
+					@updated_date = Time.now.utc.iso8601
+
+					#first verify the collection
+					self.verify or raise('Collection could not be verified, did NOT save')
+
+					#save all the messages in the collection
+					self.messages.each {|i| i.save}
+
+					#remember that we changed sth about him
+					_observe(:updated)
+
+					#tell observer
+					_notify_observer
+
+					#now save the collection itself
+					Manager.collections.save(self.serialize)
+
+					#remember our current hash
+					did_sync
+				end
+
+				self
+			end
+
+			def delete
+				#record this
+				_observe(:deleted)
+
+				#tell observer
+				_notify_observer
+
+				#remove yourself from cache
+				Manager.remove_from_cache(self.id)
+
+				#now remove yourself from server
+				Manager.collections.remove({:_id => self.id})
+
+				#for safety, zero this object
+				initialize
+			end
+
+			def user_has_unread_messages?(user_id)
+				!user_read_all?(user_id)
+			end
+
+			def user_read_all?(user_id)
+				self.messages.all? {|i| i.user_read?(user_id)}
+			end
+
+			def user_unread_messages(user_id)
+				self.messages.count {|message| message.user_read?(user_id)}
+			end
+
+			def remove_message_at(index)
+				_remove_message_at(index)
+			end
+
+			def remove_message(message)
+				_remove_message(message)
+			end
+
+			def remove_all_messages
+				until self.messages.empty? do
+					remove_message_at(self.messages.count-1)
+				end
+			end
+
+			def messages
+				_messages.map {|i| i.load_from_server}
+			end
+
+			def message_ids
+				_messages.map {|i| i.id}
+			end
+
+			def message_count
+				@messages.count
+			end
+
+			def message_at(index)
+				message = _message_at(index)
+				message.load_from_server unless message.nil?
+			end
+
+			def message_id_at(index)
+				message = _message_at(index)
+				message.id unless message.nil?
+			end
+
+			def set_message_at(index, message)
+				_set_message_at(index, message)
+			end
+
+			def set_message_id_at(index, message_id)
+				_set_message_at(index, Message.new_fault(message_id))
+			end
+
+			def add_message(message)
+				set_message_at(self.messages.count, message)
+			end
+
+			def add_message_id(message_id)
+				set_message_id_at(self.messages.count, message_id)
+			end
+
+			def add_messages(*messages)
+				messages.each {|i| add_message(i)}
+			end
+
+			def add_message_ids(*message_ids)
+				message_ids.each {|i| add_message_id(i)}
+			end
+
+			def last_message
+				_last_message.load_from_server
+			end
+
+			def last_message_id
+				_last_message.id
+			end
+
+			def user_last_unread_message(user_id)
+				message = _user_last_unread_message(user_id)
+				message.load_from_server unless message.nil?
+			end
+
+			def user_last_unread_message_id(user_id)
+				message = _user_last_unread_message(user_id)
+				message.id unless message.nil?
+			end
+
+			def serialize
+				document = Hash.new
+
+				document[:_id] = self.id
+				document[:type] = self.type
+				document[:meta] = self.meta
+				document[:messages] = self.messages.map {|i| i.id}
+				document[:createdDate] = self.created_date
+				document[:updatedDate] = self.updated_date
+
+				document
+			end
+
+			def verify#todo
+				true#foo stub
+			end
+
+		protected
+			def _load_from_server(id)
+				Manager.collections.find_one({:_id => id})
+			end
+
+		private
+			def _notify_observer
+				#loop through changes array
+				changes.uniq.each do |i|
+					#loop through all kv pairs in the hash
+					i.each do |k, v|
+						case k
+							when :created
+								Manager.no.created_collection(self.id) if Manager.no.respond_to?(:created_collection)
+							when :deleted
+								Manager.no.deleted_collection(self.id) if Manager.no.respond_to?(:deleted_collection)
+							when :updated
+								Manager.no.updated_collection(self.id) if Manager.no.respond_to?(:updated_collection)
+							when :appended
+								Manager.no.appended_message_to_collection(self.id, v) if Manager.no.respond_to?(:appended_message_to_collection)
+							when :removed
+								Manager.no.removed_message_from_collection(self.id, v) if Manager.no.respond_to?(:removed_message_from_collection)
+							else
+								#noop
+						end
+					end
+				end
+				changes.clear
+			end
+
+			def _set_message_at(index, message)
+				if index && message
+					#remove the old one
+					_remove_message_at(index)
+
+					#remember this
+					_observe(:appended, message.id)
+
+					#store it
+					_messages[index] = message
+				end
+
+				nil
+			end
+
+			def _remove_message(message)
+				index = messages.find_index(message)
+				_remove_message_at(index)
+			end
+
+			def _remove_message_at(index)
+				if index < _messages.count
+					#remember this
+					_observe(:removed, _messages[index].id)
+
+					#do the actual removal
+					_messages.delete_at(index)
+				end
+
+				nil
+			end
+
+			def _messages
+				@messages
+			end
+
+			def _message_at(index)
+				messages[index]
+			end
+
+			def _last_message
+				messages[-1] unless messages.nil?
+			end
+
+			def _user_last_unread_message(user_id)
+				messages.reverse_each do |i|
+					i.load_from_server
+					return i unless i.user_read?(user_id)
+				end unless messages.nil?
+				nil
+			end
+		end
+
+		class Message < Item
+			include Syncable
+
+			attr_accessor :type, :payload, :author, :read
+			attr_reader :id, :updated_date
+
+			def delete
+				#record this
+				_observe(:deleted)
+
+				#tell observer
+				_notify_observer
+
+				#remove yourself from cache
+				Manager.remove_from_cache(self.id)
+
+				#remove yourself from the database
+				Manager.messages.remove({:_id => self.id})
+
+				#zero self just to be safe
+				initialize
+			end
+
+			def initialize(opts={})
+				super
+
+				@id = opts[:_id ] || opts[:id]
+				@type = opts[:type] || nil
+				@payload = opts[:payload] || nil
+				@updated_date = opts[:updatedDate] || nil
+				@author = opts[:author] || nil
+				@read = opts[:read] || nil
+				self.fault = opts[:fault]
+
+				self
+			end
+
+			def self.create(opts={})
+				#set some defaults if needed
+				opts[:_id] ||= BSON::ObjectId.new.to_s
+				opts[:type] ||= 'None'
+				opts[:read] ||= []
+
+				new_object = new(opts.merge({:fault=>false}))
+				new_object.send(:_observe, :created)
+				new_object
+			end
+
+			def save
+				Manager.connected or raise('Manager not connected')
+
+				#only save it if it's not a fault, if it hasnt already been saved and if someone holds a ref to it
+				if !fault? && !synced?
+					@updated_date = Time.now.utc.iso8601
+
+					self.verify or raise('Message could not be verified, did NOT save')
+
+					_observe(:updated)
+					_notify_observer
+
+					Manager.messages.save(self.serialize)
+					did_sync
+
+					self
+				end
+			end
+
+			#returns whether a user has read a message
+			def user_read?(user)
+				load_from_server if fault?
+
+				@read.include?(user)
+			end
+
+			def set_user_read(user_id, did_read)
+				load_from_server if fault?
+
+				if did_read
+					unless user_read?(user_id)
+						_observe(:read, user_id)
+						@read.push(user_id) 
+					end
+				else
+					@read.delete(user_id)
+				end
+			end
+
+			def serialize
+				document = Hash.new
+
+				document[:_id] = self.id
+				document[:type] = self.type
+				document[:payload] = self.payload
+				document[:updatedDate] = self.updated_date
+				document[:author] = self.author
+				document[:read] = self.read
+
+				document
+			end
+
+			#makes sure that the object is good, before we save it to the db
+			def verify#todo
+				#if its a fault, then its a no for sure
+				#otherwise make sure all the fields are the right type, and are initialized etc
+				true#todo
+			end
+
+		protected
+			def _load_from_server(id)
+				Manager.messages.find_one({:_id => id})
+			end
+
+		private
+			def _notify_observer
+				#loop through changes array
+				changes.uniq.each do |i|
+					#loop through all kv pairs in the hash
+					i.each do |k, v|
+						case k
+							when :created
+								Manager.no.created_message(self.id) if Manager.no.respond_to?(:created_message)
+							when :deleted
+								Manager.no.deleted_message(self.id) if Manager.no.respond_to?(:deleted_message)
+							when :updated
+								Manager.no.updated_message(self.id) if Manager.no.respond_to?(:updated_message)
+							when :read
+								Manager.no.user_read_message(self.id, v) if Manager.no.respond_to?(:user_read_message)
+							else
+								#noop
+						end
+					end
+				end
+				changes.clear
+			end
+		end
+	end
+end
