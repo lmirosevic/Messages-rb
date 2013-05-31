@@ -1,6 +1,12 @@
 #foo implement object verification
 
 class Hash
+	def symbolize_keys(hash)
+		hash.keys.each do |key|
+			hash[(key.to_sym rescue key) || key] = hash.delete(key)
+		end
+	end
+
 	def symbolize_keys_deep!
 		self.inject({}) do |result, (key, value)|
 			new_key = case key
@@ -327,12 +333,12 @@ module Goonbee
 			def serialize
 				document = Hash.new
 
-				document[:_id] = self.id
-				document[:type] = self.type
-				document[:meta] = self.meta
-				document[:messages] = self.messages.map {|i| i.id}
-				document[:createdDate] = self.created_date
-				document[:updatedDate] = self.updated_date
+				document[:_id] = @id
+				document[:type] = @type
+				document[:meta] = @meta
+				document[:messages] = @messages.map {|i| i.id}
+				document[:createdDate] = @created_date
+				document[:updatedDate] = @updated_date
 
 				document
 			end
@@ -408,11 +414,11 @@ module Goonbee
 			end
 
 			def _message_at(index)
-				messages[index]
+				@messages[index]
 			end
 
 			def _last_message
-				messages[-1] unless messages.nil?
+				@messages[-1] unless @messages.nil?
 			end
 
 			def _user_last_unread_message(user_id)
@@ -516,12 +522,12 @@ module Goonbee
 			def serialize
 				document = Hash.new
 
-				document[:_id] = self.id
-				document[:type] = self.type
-				document[:payload] = self.payload
-				document[:updatedDate] = self.updated_date
-				document[:author] = self.author
-				document[:read] = self.read
+				document[:_id] = @id
+				document[:type] = @type
+				document[:payload] = @payload
+				document[:updatedDate] = @updated_date
+				document[:author] = @author
+				document[:read] = @read
 
 				document
 			end
