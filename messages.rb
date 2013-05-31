@@ -191,19 +191,23 @@ module Goonbee
 				new_object
 			end
 
+			def synced_deep?
+				synced? && messages.all? {|i| i.synced?}
+			end
+
 			def save
 				Manager.connected or raise('Manager not connected')
 
 				#only save it if it's not a fault
-				if !fault? && !synced?
+				if !fault? && !synced_deep?
 					#set updated field
 					@updated_date = Time.now.utc.iso8601
 
 					#first verify the collection
-					self.verify or raise('Collection could not be verified, did NOT save')
+					verify or raise('Collection could not be verified, did NOT save')
 
 					#save all the messages in the collection
-					self.messages.each {|i| i.save}
+					messages.each {|i| i.save}
 
 					#remember that we changed sth about him
 					_observe(:updated)
@@ -331,16 +335,51 @@ module Goonbee
 			end
 
 			def serialize
-				document = Hash.new
+				{
+					:_id => @id,
+					:type => @type,
+					:meta => @meta,
+					:messages => @messages.map {|i| i.id},
+					:createdDate => @created_date,
+					:updatedDate => @updated_date,
+				}
+			end
 
-				document[:_id] = @id
-				document[:type] = @type
-				document[:meta] = @meta
-				document[:messages] = @messages.map {|i| i.id}
-				document[:createdDate] = @created_date
-				document[:updatedDate] = @updated_date
+			def serialize_deep
+				{
+					:_id => @id,
+					:type => @type,
+					:meta => @meta,
+					:messages => @messages.map {|i| i.load_from_server.serialize},
+					:createdDate => @created_date,
+					:updatedDate => @updated_date,
+				}
+			end
 
-				document
+			def serialize_public
+				self.load_from_server
+
+				{
+					:collectionID => @id,
+					:type => @type,
+					:meta => @meta,
+					:messages => @messages.map {|i| i.serialize_public},
+					:createdDate => @created_date,
+					:updatedDate => @updated_date,
+				}
+			end
+
+			def serialize_public_for_user(user)
+				self.load_from_server
+
+				{
+					:collectionID => @id,
+					:type => @type,
+					:meta => @meta,
+					:messages => @messages.map {|i| i.serialize_public_for_user(user)},
+					:createdDate => @created_date,
+					:updatedDate => @updated_date,
+				}
 			end
 
 			def verify#todo
@@ -520,16 +559,41 @@ module Goonbee
 			end
 
 			def serialize
-				document = Hash.new
+				{
+					:_id => @id,
+					:type => @type,
+					:payload => @payload,
+					:updatedDate => @updated_date,
+					:author => @author,
+					:read => @read,
+				}
+			end
 
-				document[:_id] = @id
-				document[:type] = @type
-				document[:payload] = @payload
-				document[:updatedDate] = @updated_date
-				document[:author] = @author
-				document[:read] = @read
+			def serialize_public
+				self.load_from_server
 
-				document
+				{
+					:messageID => @id,
+					:type => @type,
+					:payload => @payload,
+					:updatedDate => @updated_date,
+					:author => @author,
+				}
+			end
+
+			def serialize_public_for_user(user)
+				return serialize_public if user.nil?
+
+				self.load_from_server
+
+				{
+					:messageID => @id,
+					:type => @type,
+					:payload => @payload,
+					:updatedDate => @updated_date,
+					:author => @author,
+					:read => user_read?(user),
+				}
 			end
 
 			#makes sure that the object is good, before we save it to the db
