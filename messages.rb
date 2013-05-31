@@ -210,9 +210,11 @@ module Goonbee
 
 					#remember our current hash
 					did_sync
-				end
 
-				self
+					self
+				else
+					nil
+				end
 			end
 
 			def delete
@@ -486,6 +488,8 @@ module Goonbee
 					did_sync
 
 					self
+				else
+					nil
 				end
 			end
 
