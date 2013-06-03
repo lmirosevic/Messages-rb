@@ -1,6 +1,6 @@
 #foo implement object verification
 
-class Hash
+class Hash#foo factor this out into a GBToolbox module
 	def symbolize_keys
 		_symbolize_keys(self)
 	end
