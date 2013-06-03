@@ -1,26 +1,46 @@
 #foo implement object verification
 
 class Hash
-	def symbolize_keys(hash)
-		hash.keys.each do |key|
-			hash[(key.to_sym rescue key) || key] = hash.delete(key)
-		end
+	def symbolize_keys
+		_symbolize_keys(self)
 	end
 
-	def symbolize_keys_deep!
-		self.inject({}) do |result, (key, value)|
+	def _symbolize_keys(hash)
+		hash.inject({}){|result, (key, value)|
 			new_key = case key
-				when String then key.to_sym
-				else key
-				end
+				          when String then key.to_sym
+				          else key
+			          end
 			new_value = case value
-				when Hash then symbolize_keys(value)
-				else value
-				end
+				            when Hash then _symbolize_keys(value)
+				            else value
+			            end
 			result[new_key] = new_value
 			result
-		end
+		}
 	end
+
+
+	#def symbolize_keys(hash)
+	#	hash.keys.each do |key|
+	#		hash[(key.to_sym rescue key) || key] = hash.delete(key)
+	#	end
+	#end
+	#
+	#def symbolize_keys_deep!
+	#	self.inject({}) do |result, (key, value)|
+	#		new_key = case key
+	#			when String then key.to_sym
+	#			else key
+	#			end
+	#		new_value = case value
+	#			when Hash then symbolize_keys(value)
+	#			else value
+	#			end
+	#		result[new_key] = new_value
+	#		result
+	#	end
+	#end
 end
 
 module Syncable
@@ -57,31 +77,34 @@ module Goonbee
 				end
 
 				def cache
-					#lazy
+					#lazy creation of root container
 					@cache = Hash.new unless @cache
 
 					@cache
 				end
 
-				def add_to_cache(id, item)
-					unless in_cache?(id)
-						cache[id] = item
+				def add_to_cache(bucket, id, item)
+					unless in_cache?(bucket, id)
+						#lazily create the bucket
+						@cache[bucket] = Hash.new unless @cache[bucket]
+
+						cache[bucket][id] = item
 					end
 				end
 
-				def remove_from_cache(id)
-					if in_cache?(id)
-						cache.delete(id)
+				def remove_from_cache(bucket, id)
+					if in_cache?(bucket, id)
+						cache[bucket].delete(id)
 					end
 				end
 
-				def in_cache?(id)
-					cache.has_key?(id)
+				def in_cache?(bucket, id)
+					cache.has_key?(bucket) && cache[bucket].has_key?(id)
 				end
 
-				def get_from_cache(id)
-					if in_cache?(id)
-						cache[id]
+				def get_from_cache(bucket, id)
+					if in_cache?(bucket, id)
+						cache[bucket][id]
 					end
 				end
 
@@ -91,10 +114,13 @@ module Goonbee
 
 		class Item
 			def self.new(*args, &block)
-				#check if it has an id field and if that is in the cahce
-				if (args[0].is_a?(Hash)) && (id = args[0][:_id ] || args[0][:id]) && (Manager.in_cache?(id))#foo might be an array even with 1 arg or not...
+				#each type of obj will be in its own bucket, this prevents accidentally returning a message when the user creates a collecion if there happens to be a message cached with that id
+				bucket = self.name
+
+				#check if it has an id field and if that is in the cache
+				if (args[0].is_a?(Hash)) && (id = args[0][:_id ] || args[0][:id]) && (Manager.in_cache?(bucket, id))
 					#return the cached object
-					Manager.get_from_cache(id)
+					Manager.get_from_cache(bucket, id)
 				else
 					#create a new one
 					new_object = self.allocate
@@ -102,7 +128,7 @@ module Goonbee
 
 					#store it in the cache
 					id = new_object.id
-					Manager.add_to_cache(id, new_object) unless id.nil?
+					Manager.add_to_cache(bucket, id, new_object) unless id.nil?
 
 					#return it
 					new_object
@@ -122,7 +148,7 @@ module Goonbee
 				Manager.connected or raise('Manager not connected')
 
 				if self.id && (document = _load_from_server(self.id))
-					initialize(document.symbolize_keys_deep!.merge({:fault => false}))
+					initialize(document.symbolize_keys.merge({:fault => false}))
 					did_sync
 					self
 				else
@@ -157,6 +183,10 @@ module Goonbee
 
 			attr_accessor :type, :meta
 			attr_reader :id, :created_date, :updated_date
+
+			def self.exists?(id)
+				Manager.collections.find({:_id=>id}).limit(1).count == 1
+			end
 
 			def initialize(opts={})
 				#create a new one
@@ -235,7 +265,7 @@ module Goonbee
 				_notify_observer
 
 				#remove yourself from cache
-				Manager.remove_from_cache(self.id)
+				Manager.remove_from_cache(self.class.name, self.id)
 
 				#now remove yourself from server
 				Manager.collections.remove({:_id => self.id})
@@ -475,6 +505,10 @@ module Goonbee
 			attr_accessor :type, :payload, :author, :read
 			attr_reader :id, :updated_date
 
+			def self.exists?(id)
+				Manager.messages.find({:_id=>id}).limit(1).count == 1
+			end
+
 			def delete
 				#record this
 				_observe(:deleted)
@@ -483,7 +517,7 @@ module Goonbee
 				_notify_observer
 
 				#remove yourself from cache
-				Manager.remove_from_cache(self.id)
+				Manager.remove_from_cache(self.class.name, self.id)
 
 				#remove yourself from the database
 				Manager.messages.remove({:_id => self.id})
