@@ -418,7 +418,7 @@ module Goonbee
 
 		protected
 			def _load_from_server(id)
-				Manager.collections.find_one({:_id => id})
+				Manager.collections.find_one({:_id => BSON::ObjectId.from_string(id)})
 			end
 
 		private
@@ -639,7 +639,7 @@ module Goonbee
 
 		protected
 			def _load_from_server(id)
-				Manager.messages.find_one({:_id => id})
+				Manager.messages.find_one({:_id => BSON::ObjectId.from_string(id)})
 			end
 
 		private
