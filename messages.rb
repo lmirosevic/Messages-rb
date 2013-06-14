@@ -47,11 +47,11 @@ module Syncable
 	attr_accessor :last_hash
 
 	def synced?
-		self.last_hash == self.serialize.hash
+		last_hash == serialize.hash
 	end
 
 	def did_sync
-		self.last_hash = self.serialize.hash
+		last_hash = serialize.hash
 	end
 end
 
@@ -115,7 +115,7 @@ module Goonbee
 		class Item
 			def self.new(*args, &block)
 				#each type of obj will be in its own bucket, this prevents accidentally returning a message when the user creates a collecion if there happens to be a message cached with that id
-				bucket = self.name
+				bucket = name
 
 				#check if it has an id field and if that is in the cache
 				if (args[0].is_a?(Hash)) && (id = args[0][:_id ] || args[0][:id]) && (Manager.in_cache?(bucket, id))
@@ -123,7 +123,7 @@ module Goonbee
 					Manager.get_from_cache(bucket, id)
 				else
 					#create a new one
-					new_object = self.allocate
+					new_object = allocate
 					new_object.send(:initialize, *args, &block)
 
 					#store it in the cache
@@ -147,7 +147,7 @@ module Goonbee
 				return self unless fault?
 				Manager.connected or raise('Manager not connected')
 
-				if self.id && (document = _load_from_server(self.id))
+				if id && (document = _load_from_server(id))
 					initialize(document.symbolize_keys.merge({:fault => false}))
 					did_sync
 					self
@@ -191,7 +191,7 @@ module Goonbee
 			def initialize(opts={})
 				#create a new one
 				super
-				@id = opts[:_id ] || opts[:id] || nil
+				@id = (opts[:_id] ? opts[:_id].to_s : false) || opts[:id] || nil
 				@type = opts[:type] || nil
 				@meta = opts[:meta] || nil
 				@messages = opts[:messages] ? opts[:messages].map do |i|
@@ -204,7 +204,7 @@ module Goonbee
 				@created_date = opts[:createdDate] || nil
 				@updated_date = opts[:updatedDate] || nil
 
-				self.fault = opts[:fault]
+				fault = opts[:fault]
 
 				self
 			end
@@ -245,8 +245,10 @@ module Goonbee
 					#tell observer
 					_notify_observer
 
+					serialized = serialize
+
 					#now save the collection itself
-					Manager.collections.save(self.serialize)
+					Manager.collections.save(serialize)
 
 					#remember our current hash
 					did_sync
@@ -265,10 +267,10 @@ module Goonbee
 				_notify_observer
 
 				#remove yourself from cache
-				Manager.remove_from_cache(self.class.name, self.id)
+				Manager.remove_from_cache(self.class.name, id)
 
 				#now remove yourself from server
-				Manager.collections.remove({:_id => self.id})
+				Manager.collections.remove({:_id => BSON::ObjectId.from_string(id)})
 
 				#for safety, zero this object
 				initialize
@@ -279,11 +281,11 @@ module Goonbee
 			end
 
 			def user_read_all?(user_id)
-				self.messages.all? {|i| i.user_read?(user_id)}
+				messages.all? {|i| i.user_read?(user_id)}
 			end
 
 			def user_unread_messages(user_id)
-				self.messages.count {|message| message.user_read?(user_id)}
+				messages.count {|message| message.user_read?(user_id)}
 			end
 
 			def remove_message_at(index)
@@ -295,8 +297,8 @@ module Goonbee
 			end
 
 			def remove_all_messages
-				until self.messages.empty? do
-					remove_message_at(self.messages.count-1)
+				until messages.empty? do
+					remove_message_at(messages.count-1)
 				end
 			end
 
@@ -331,11 +333,11 @@ module Goonbee
 			end
 
 			def add_message(message)
-				set_message_at(self.messages.count, message)
+				set_message_at(messages.count, message)
 			end
 
 			def add_message_id(message_id)
-				set_message_id_at(self.messages.count, message_id)
+				set_message_id_at(messages.count, message_id)
 			end
 
 			def add_messages(*messages)
@@ -366,7 +368,7 @@ module Goonbee
 
 			def serialize
 				{
-					:_id => @id,
+					:_id => BSON::ObjectId.from_string(@id),
 					:type => @type,
 					:meta => @meta,
 					:messages => @messages.map {|i| i.id},
@@ -377,7 +379,7 @@ module Goonbee
 
 			def serialize_deep
 				{
-					:_id => @id,
+					:_id => BSON::ObjectId.from_string(@id),
 					:type => @type,
 					:meta => @meta,
 					:messages => @messages.map {|i| i.load_from_server.serialize},
@@ -387,7 +389,7 @@ module Goonbee
 			end
 
 			def serialize_public
-				self.load_from_server
+				load_from_server
 
 				{
 					:collectionID => @id,
@@ -400,7 +402,7 @@ module Goonbee
 			end
 
 			def serialize_public_for_user(user)
-				self.load_from_server
+				load_from_server
 
 				{
 					:collectionID => @id,
@@ -429,15 +431,15 @@ module Goonbee
 					i.each do |k, v|
 						case k
 							when :created
-								Manager.no.created_collection(self.id) if Manager.no.respond_to?(:created_collection)
+								Manager.no.created_collection(id) if Manager.no.respond_to?(:created_collection)
 							when :deleted
-								Manager.no.deleted_collection(self.id) if Manager.no.respond_to?(:deleted_collection)
+								Manager.no.deleted_collection(id) if Manager.no.respond_to?(:deleted_collection)
 							when :updated
-								Manager.no.updated_collection(self.id) if Manager.no.respond_to?(:updated_collection)
+								Manager.no.updated_collection(id) if Manager.no.respond_to?(:updated_collection)
 							when :appended
-								Manager.no.appended_message_to_collection(self.id, v) if Manager.no.respond_to?(:appended_message_to_collection)
+								Manager.no.appended_message_to_collection(id, v) if Manager.no.respond_to?(:appended_message_to_collection)
 							when :removed
-								Manager.no.removed_message_from_collection(self.id, v) if Manager.no.respond_to?(:removed_message_from_collection)
+								Manager.no.removed_message_from_collection(id, v) if Manager.no.respond_to?(:removed_message_from_collection)
 							else
 								#noop
 						end
@@ -517,10 +519,10 @@ module Goonbee
 				_notify_observer
 
 				#remove yourself from cache
-				Manager.remove_from_cache(self.class.name, self.id)
+				Manager.remove_from_cache(self.class.name, id)
 
 				#remove yourself from the database
-				Manager.messages.remove({:_id => self.id})
+				Manager.messages.remove({:_id => BSON::ObjectId.from_string(id)})
 
 				#zero self just to be safe
 				initialize
@@ -529,20 +531,20 @@ module Goonbee
 			def initialize(opts={})
 				super
 
-				@id = opts[:_id ] || opts[:id]
+				@id = (opts[:_id ] ? opts[:_id].to_s : false) || opts[:id]
 				@type = opts[:type] || nil
 				@payload = opts[:payload] || nil
 				@updated_date = opts[:updatedDate] || nil
 				@author = opts[:author] || nil
 				@read = opts[:read] || nil
-				self.fault = opts[:fault]
+				fault = opts[:fault]
 
 				self
 			end
 
 			def self.create(opts={})
 				#set some defaults if needed
-				opts[:_id] ||= BSON::ObjectId.new.to_s
+				opts[:_id] ||= BSON::ObjectId.new
 				opts[:type] ||= 'None'
 				opts[:read] ||= []
 
@@ -558,12 +560,12 @@ module Goonbee
 				if !fault? && !synced?
 					@updated_date = Time.now.utc.iso8601
 
-					self.verify or raise('Message could not be verified, did NOT save')
+					verify or raise('Message could not be verified, did NOT save')
 
 					_observe(:updated)
 					_notify_observer
 
-					Manager.messages.save(self.serialize)
+					Manager.messages.save(serialize)
 					did_sync
 
 					self
@@ -594,7 +596,7 @@ module Goonbee
 
 			def serialize
 				{
-					:_id => @id,
+					:_id => BSON::ObjectId.from_string(@id),
 					:type => @type,
 					:payload => @payload,
 					:updatedDate => @updated_date,
@@ -604,7 +606,7 @@ module Goonbee
 			end
 
 			def serialize_public
-				self.load_from_server
+				load_from_server
 
 				{
 					:messageID => @id,
@@ -618,7 +620,7 @@ module Goonbee
 			def serialize_public_for_user(user)
 				return serialize_public if user.nil?
 
-				self.load_from_server
+				load_from_server
 
 				{
 					:messageID => @id,
@@ -650,13 +652,13 @@ module Goonbee
 					i.each do |k, v|
 						case k
 							when :created
-								Manager.no.created_message(self.id) if Manager.no.respond_to?(:created_message)
+								Manager.no.created_message(id) if Manager.no.respond_to?(:created_message)
 							when :deleted
-								Manager.no.deleted_message(self.id) if Manager.no.respond_to?(:deleted_message)
+								Manager.no.deleted_message(id) if Manager.no.respond_to?(:deleted_message)
 							when :updated
-								Manager.no.updated_message(self.id) if Manager.no.respond_to?(:updated_message)
+								Manager.no.updated_message(id) if Manager.no.respond_to?(:updated_message)
 							when :read
-								Manager.no.user_read_message(self.id, v) if Manager.no.respond_to?(:user_read_message)
+								Manager.no.user_read_message(id, v) if Manager.no.respond_to?(:user_read_message)
 							else
 								#noop
 						end
