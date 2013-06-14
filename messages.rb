@@ -245,8 +245,6 @@ module Goonbee
 					#tell observer
 					_notify_observer
 
-					serialized = serialize
-
 					#now save the collection itself
 					Manager.collections.save(serialize)
 
