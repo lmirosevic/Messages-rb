@@ -245,7 +245,7 @@ module Goonbee
 					verify or raise('Collection could not be verified, did NOT save')
 
 					#save all the messages in the collection
-					messages.each {|i| i.save}
+					_messages.each {|i| i.save}#foo used to be message.each, which did a deep load
 
 					#remember that we changed sth about him
 					_observe(:updated)
@@ -339,7 +339,7 @@ module Goonbee
 			end
 
 			def add_message(message)
-				set_message_at(messages.count, message)
+				set_message_at(_messages.count, message)#foo used to be messages.count which did a deep load
 			end
 
 			def add_message_id(message_id)
@@ -543,7 +543,7 @@ module Goonbee
 				@updated_date = opts[:updatedDate] || nil
 				@author = opts[:author] || nil
 				@read = opts[:read] || nil
-				
+
 				self.fault = opts[:fault]
 
 				self
