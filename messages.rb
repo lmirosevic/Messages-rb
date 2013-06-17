@@ -1,3 +1,11 @@
+# encoding: UTF-8
+
+# messages.rb
+# Goonbee
+#
+# Created by Luka Mirosevic on 27/04/2013.
+# Copyright (c) 2013 Goonbee. All rights reserved.
+
 #foo implement object verification
 
 class Hash#foo factor this out into a GBToolbox module
