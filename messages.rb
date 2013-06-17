@@ -212,7 +212,7 @@ module Goonbee
 				@created_date = opts[:createdDate] || nil
 				@updated_date = opts[:updatedDate] || nil
 
-				fault = opts[:fault]
+				self.fault = opts[:fault]
 
 				self
 			end
@@ -543,7 +543,8 @@ module Goonbee
 				@updated_date = opts[:updatedDate] || nil
 				@author = opts[:author] || nil
 				@read = opts[:read] || nil
-				fault = opts[:fault]
+				
+				self.fault = opts[:fault]
 
 				self
 			end
