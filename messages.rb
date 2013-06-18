@@ -394,34 +394,6 @@ module Goonbee
 				}
 			end
 
-			def serialize_public
-				load_from_server
-
-				{
-					:collectionID => @id,
-					:type => @type,
-					:meta => @meta,
-					:messages => @messages.map {|i| i.serialize_public},
-					:createdDate => @created_date,
-					:updatedDate => @updated_date,
-				}
-			end
-
-			def serialize_public_for_user(user)
-				return serialize_public if user.nil?
-
-				load_from_server
-
-				{
-					:collectionID => @id,
-					:type => @type,
-					:meta => @meta,
-					:messages => @messages.map {|i| i.serialize_public_for_user(user)},
-					:createdDate => @created_date,
-					:updatedDate => @updated_date,
-				}
-			end
-
 			def verify#todo
 				true#foo stub
 			end
@@ -613,33 +585,6 @@ module Goonbee
 					:updatedDate => @updated_date,
 					:authorID => @author,
 					:read => @read,
-				}
-			end
-
-			def serialize_public
-				load_from_server
-
-				{
-					:messageID => @id,
-					:type => @type,
-					:payload => @payload,
-					:updatedDate => @updated_date,
-					:authorID => @author,
-				}
-			end
-
-			def serialize_public_for_user(user)
-				return serialize_public if user.nil?
-
-				load_from_server
-
-				{
-					:messageID => @id,
-					:type => @type,
-					:payload => @payload,
-					:updatedDate => @updated_date,
-					:authorID => @author,
-					:read => user_read?(user),
 				}
 			end
 
