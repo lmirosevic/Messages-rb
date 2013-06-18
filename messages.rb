@@ -408,6 +408,8 @@ module Goonbee
 			end
 
 			def serialize_public_for_user(user)
+				return serialize_public if user.nil?
+
 				load_from_server
 
 				{
@@ -541,7 +543,7 @@ module Goonbee
 				@type = opts[:type] || nil
 				@payload = opts[:payload] || nil
 				@updated_date = opts[:updatedDate] || nil
-				@author = opts[:author] || nil
+				@author = opts[:author] || opts[:authorID] || nil
 				@read = opts[:read] || nil
 
 				self.fault = opts[:fault]
@@ -583,6 +585,8 @@ module Goonbee
 
 			#returns whether a user has read a message
 			def user_read?(user)
+				return false if user.nil?
+
 				load_from_server if fault?
 
 				@read.include?(user)
@@ -607,7 +611,7 @@ module Goonbee
 					:type => @type,
 					:payload => @payload,
 					:updatedDate => @updated_date,
-					:author => @author,
+					:authorID => @author,
 					:read => @read,
 				}
 			end
@@ -620,7 +624,7 @@ module Goonbee
 					:type => @type,
 					:payload => @payload,
 					:updatedDate => @updated_date,
-					:author => @author,
+					:authorID => @author,
 				}
 			end
 
@@ -634,7 +638,7 @@ module Goonbee
 					:type => @type,
 					:payload => @payload,
 					:updatedDate => @updated_date,
-					:author => @author,
+					:authorID => @author,
 					:read => user_read?(user),
 				}
 			end
