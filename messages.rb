@@ -125,21 +125,21 @@ module Goonbee
 				bucket = name
 
 				#check if it has an id field and if that is in the cache
-				# if (args[0].is_a?(Hash)) && (id = args[0][:_id ] || args[0][:id]) && (Manager.in_cache?(bucket, id))
-				# 	#return the cached object
-				# 	Manager.get_from_cache(bucket, id)
-				# else
+				if (args[0].is_a?(Hash)) && (id = args[0][:_id ] || args[0][:id]) && (Manager.in_cache?(bucket, id))
+					#return the cached object
+					Manager.get_from_cache(bucket, id)
+				else
 					#create a new one
 					new_object = allocate
 					new_object.send(:initialize, *args, &block)
 
 					#store it in the cache
-					# id = new_object.id
-					# Manager.add_to_cache(bucket, id, new_object) unless id.nil?
+					id = new_object.id
+					Manager.add_to_cache(bucket, id, new_object) unless id.nil?
 
 					#return it
 					new_object
-				# end
+				end
 			end
 
 			def self.new_fault(id)
@@ -272,7 +272,7 @@ module Goonbee
 				_notify_observer
 
 				#remove yourself from cache
-				# Manager.remove_from_cache(self.class.name, id)
+				Manager.remove_from_cache(self.class.name, id)
 
 				#now remove yourself from server
 				Manager.collections.remove({:_id => BSON::ObjectId.from_string(id)})
@@ -498,7 +498,7 @@ module Goonbee
 				_notify_observer
 
 				#remove yourself from cache
-				# Manager.remove_from_cache(self.class.name, id)
+				Manager.remove_from_cache(self.class.name, id)
 
 				#remove yourself from the database
 				Manager.messages.remove({:_id => BSON::ObjectId.from_string(id)})
