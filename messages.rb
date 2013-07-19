@@ -50,16 +50,33 @@ module Goonbee
 
 		class Manager
 			class << self
-				attr_reader :db, :messages, :collections, :connected
 				attr_accessor :notifications_object
 				alias_method :register_notifications_object, :notifications_object=
 				alias_method :no, :notifications_object
 
-				def connect(database)
-					@db = database
-					@messages = @db.collection('messages')
-					@collections = @db.collection('collections')
+				def connect(client)
+					@mongo = client
 					@connected = true
+				end
+
+				def mongo
+					#reconnect if needed
+					@mongo.connect unless @mongo.connected?
+
+					#return main DB
+					@mongo[ENV['MESSAGES_DATABASE']]
+				end
+
+				def connected
+					@connected
+				end
+
+				def messages
+					mongo.collection('messages')
+				end
+
+				def collections
+					mongo.collection('collections')
 				end
 
 				def cache
