@@ -116,6 +116,10 @@ module Goonbee
 					end
 				end
 
+				def clear_cache
+					@cache = nil
+				end
+
 			end
 		end
 
