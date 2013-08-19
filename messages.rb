@@ -293,6 +293,11 @@ module Goonbee
 				initialize
 			end
 
+			#marks all message in a collection as read/unread
+			def set_user_read_all(user_id, did_read)
+		        self.messages.each {|m| m.set_user_read(user_id, did_read)}
+			end
+
 			def user_has_unread_messages?(user_id)
 				!user_read_all?(user_id)
 			end
@@ -580,12 +585,12 @@ module Goonbee
 			end
 
 			#returns whether a user has read a message
-			def user_read?(user)
-				return false if user.nil?
+			def user_read?(user_id)
+				return false if user_id.nil?
 
 				load_from_server if fault?
 
-				@read.include?(user)
+				@read.include?(user_id)
 			end
 
 			def set_user_read(user_id, did_read)
