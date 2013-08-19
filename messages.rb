@@ -30,14 +30,19 @@ class Hash#foo factor this out into a GBToolbox module
 end
 
 module Syncable
-	attr_accessor :last_hash
+	attr_accessor :last_hash, :last_hash_core
 
 	def synced?
 		last_hash == serialize.hash
 	end
 
+	def synced_core?
+		last_hash_core == serialize_core.hash
+	end
+
 	def did_sync
 		last_hash = serialize.hash
+		last_hash_core = serialize_core.hash
 	end
 end
 
@@ -232,14 +237,21 @@ module Goonbee
 				synced? && messages.all? {|i| i.synced?}
 			end
 
+			def synced_core_deep?
+				synced? && messages.all? {|i| i.synced_core?}
+			end
+
 			def save
 				Manager.connected or raise 'Manager not connected'
 
-				#only save it if it's not a fault
-				if !fault? && !synced_deep?
+				#set updated field only if the core properties have changed
+				if !fault? && !synced_core_deep?
 					#set updated field
 					@updated_date = Time.now.utc.iso8601
+				end
 
+				#only save it if it's not a fault
+				if !fault? && !synced_deep?
 					#first verify the collection
 					verify or raise 'Collection could not be verified, did NOT save'
 
@@ -382,6 +394,8 @@ module Goonbee
 				}
 			end
 
+			alias_method :serialize_core, :serialize
+
 			def serialize_deep
 				{
 					:_id => BSON::ObjectId.from_string(@id),
@@ -490,23 +504,6 @@ module Goonbee
 				Manager.messages.find({:_id=>id}).limit(1).count == 1
 			end
 
-			def delete
-				#record this
-				_observe(:deleted)
-
-				#tell observer
-				_notify_observer
-
-				#remove yourself from cache
-				Manager.remove_from_cache(self.class.name, id)
-
-				#remove yourself from the database
-				Manager.messages.remove({:_id => BSON::ObjectId.from_string(id)})
-
-				#zero self just to be safe
-				initialize
-			end
-
 			def initialize(opts={})
 				super
 
@@ -534,12 +531,16 @@ module Goonbee
 			end
 
 			def save
-				Manager.connected or raise 'Manager not connected.'
+				Manager.connected or raise 'Manager not connected'
+
+				#set updated field only if the core properties have changed
+				if !fault? && !synced_core?
+					#set updated field
+					@updated_date = Time.now.utc.iso8601
+				end
 
 				#only save it if it's not a fault, if it hasnt already been saved and if someone holds a ref to it
 				if !fault? && !synced?
-					@updated_date = Time.now.utc.iso8601
-
 					verify or raise 'Message could not be verified, did NOT save!'
 
 					_observe(:updated)
@@ -552,6 +553,23 @@ module Goonbee
 				else
 					nil
 				end
+			end
+
+			def delete
+				#record this
+				_observe(:deleted)
+
+				#tell observer
+				_notify_observer
+
+				#remove yourself from cache
+				Manager.remove_from_cache(self.class.name, id)
+
+				#remove yourself from the database
+				Manager.messages.remove({:_id => BSON::ObjectId.from_string(id)})
+
+				#zero self just to be safe
+				initialize
 			end
 
 			#returns whether a user has read a message
@@ -567,7 +585,7 @@ module Goonbee
 				load_from_server if fault?
 
 				if did_read
-					unless user_read?(user_id)
+					if not user_read?(user_id)
 						_observe(:read, user_id)
 						@read.push(user_id) 
 					end
@@ -584,6 +602,16 @@ module Goonbee
 					:updatedDate => @updated_date,
 					:authorID => @author,
 					:read => @read,
+				}
+			end
+
+			def serialize_core
+				{
+					:_id => BSON::ObjectId.from_string(@id),
+					:type => @type,
+					:payload => @payload,
+					:updatedDate => @updated_date,
+					:authorID => @author,
 				}
 			end
 
@@ -606,16 +634,16 @@ module Goonbee
 					#loop through all kv pairs in the hash
 					i.each do |k, v|
 						case k
-							when :created
-								Manager.no.created_message(id) if Manager.no.respond_to?(:created_message)
-							when :deleted
-								Manager.no.deleted_message(id) if Manager.no.respond_to?(:deleted_message)
-							when :updated
-								Manager.no.updated_message(id) if Manager.no.respond_to?(:updated_message)
-							when :read
-								Manager.no.user_read_message(id, v) if Manager.no.respond_to?(:user_read_message)
-							else
-								#noop
+						when :created
+							Manager.no.created_message(id) if Manager.no.respond_to?(:created_message)
+						when :deleted
+							Manager.no.deleted_message(id) if Manager.no.respond_to?(:deleted_message)
+						when :updated
+							Manager.no.updated_message(id) if Manager.no.respond_to?(:updated_message)
+						when :read
+							Manager.no.user_read_message(id, v) if Manager.no.respond_to?(:user_read_message)
+						else
+							#noop
 						end
 					end
 				end
