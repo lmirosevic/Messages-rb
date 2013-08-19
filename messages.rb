@@ -16,12 +16,12 @@ class Hash#foo factor this out into a GBToolbox module
 	def _symbolize_keys(hash)
 		hash.inject({}){|result, (key, value)|
 			new_key = case key
-				          when String then key.to_sym
-				          else key
+			          when String then key.to_sym
+			          else key
 			          end
 			new_value = case value
-				            when Hash then _symbolize_keys(value)
-				            else value
+			            when Hash then _symbolize_keys(value)
+			            else value
 			            end
 			result[new_key] = new_value
 			result
@@ -41,8 +41,8 @@ module Syncable
 	end
 
 	def did_sync
-		last_hash = serialize.hash
-		last_hash_core = serialize_core.hash
+		self.last_hash = serialize.hash
+		self.last_hash_core = serialize_core.hash
 	end
 end
 
@@ -394,7 +394,14 @@ module Goonbee
 				}
 			end
 
-			alias_method :serialize_core, :serialize
+			def serialize_core
+				{
+					:_id => BSON::ObjectId.from_string(@id),
+					:type => @type,
+					:meta => @meta,
+					:messages => @messages.map {|i| i.id},
+				}
+			end
 
 			def serialize_deep
 				{
@@ -423,18 +430,18 @@ module Goonbee
 					#loop through all kv pairs in the hash
 					i.each do |k, v|
 						case k
-							when :created
-								Manager.no.created_collection(id) if Manager.no.respond_to?(:created_collection)
-							when :deleted
-								Manager.no.deleted_collection(id) if Manager.no.respond_to?(:deleted_collection)
-							when :updated
-								Manager.no.updated_collection(id) if Manager.no.respond_to?(:updated_collection)
-							when :appended
-								Manager.no.appended_message_to_collection(id, v) if Manager.no.respond_to?(:appended_message_to_collection)
-							when :removed
-								Manager.no.removed_message_from_collection(id, v) if Manager.no.respond_to?(:removed_message_from_collection)
-							else
-								#noop
+						when :created
+							Manager.no.created_collection(id) if Manager.no.respond_to?(:created_collection)
+						when :deleted
+							Manager.no.deleted_collection(id) if Manager.no.respond_to?(:deleted_collection)
+						when :updated
+							Manager.no.updated_collection(id) if Manager.no.respond_to?(:updated_collection)
+						when :appended
+							Manager.no.appended_message_to_collection(id, v) if Manager.no.respond_to?(:appended_message_to_collection)
+						when :removed
+							Manager.no.removed_message_from_collection(id, v) if Manager.no.respond_to?(:removed_message_from_collection)
+						else
+							#noop
 						end
 					end
 				end
@@ -610,7 +617,6 @@ module Goonbee
 					:_id => BSON::ObjectId.from_string(@id),
 					:type => @type,
 					:payload => @payload,
-					:updatedDate => @updated_date,
 					:authorID => @author,
 				}
 			end
@@ -619,7 +625,7 @@ module Goonbee
 			def verify#todo
 				#if its a fault, then its a no for sure
 				#otherwise make sure all the fields are the right type, and are initialized etc
-				true#todo
+				true
 			end
 
 		protected
