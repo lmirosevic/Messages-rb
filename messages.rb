@@ -324,6 +324,10 @@ module Goonbee
 				end
 			end
 
+			def length
+				_messages.length
+			end
+
 			def messages
 				_messages.map {|i| i.load_from_server}
 			end
