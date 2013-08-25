@@ -1,7 +1,7 @@
 # encoding: UTF-8
 
 # messages.rb
-# Goonbee
+# Goonbee Messages
 #
 # Created by Luka Mirosevic on 27/04/2013.
 # Copyright (c) 2013 Goonbee. All rights reserved.
