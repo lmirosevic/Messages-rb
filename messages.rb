@@ -8,43 +8,7 @@
 
 #foo implement object verification
 
-class Hash#foo factor this out into a GBToolbox module
-	def symbolize_keys
-		_symbolize_keys(self)
-	end
-
-	def _symbolize_keys(hash)
-		hash.inject({}){|result, (key, value)|
-			new_key = case key
-			          when String then key.to_sym
-			          else key
-			          end
-			new_value = case value
-			            when Hash then _symbolize_keys(value)
-			            else value
-			            end
-			result[new_key] = new_value
-			result
-		}
-	end
-end
-
-module Syncable
-	attr_accessor :last_hash, :last_hash_core
-
-	def synced?
-		last_hash == serialize.hash
-	end
-
-	def synced_core?
-		last_hash_core == serialize_core.hash
-	end
-
-	def did_sync
-		self.last_hash = serialize.hash
-		self.last_hash_core = serialize_core.hash
-	end
-end
+require './lib/Goonbee/Toolbox/toolbox'
 
 module Goonbee
 	module Messages
