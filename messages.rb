@@ -53,6 +53,18 @@ module Goonbee
 		require 'bson'
 		require 'time'
 
+		class MessagesError < StandardError
+		end
+
+		class NotConnectedError < MessagesError
+		end
+
+		class ObjectNotFoundError < MessagesError
+		end
+
+		class VerificationFailedError < MessagesError
+		end
+
 		class Manager
 			class << self
 				attr_accessor :notifications_object
@@ -157,14 +169,14 @@ module Goonbee
 
 			def load_from_server
 				return self unless fault?
-				Manager.connected or raise 'Manager not connected'
+				Manager.connected or raise NotConnectedError
 
 				if id && (document = _load_from_server(id))
 					initialize(document.symbolize_keys.merge({:fault => false}))
 					did_sync
 					self
 				else
-					raise "No such item for id: #{id}"
+					raise ObjectNotFoundError
 				end
 			end
 
@@ -242,7 +254,7 @@ module Goonbee
 			end
 
 			def save
-				Manager.connected or raise 'Manager not connected'
+				Manager.connected or raise NotConnectedError
 
 				#set updated field only if the core properties have changed
 				if !fault? && !synced_core_deep?
@@ -253,7 +265,7 @@ module Goonbee
 				#only save it if it's not a fault
 				if !fault? && !synced_deep?
 					#first verify the collection
-					verify or raise 'Collection could not be verified, did NOT save'
+					verify or raise VerificationFailedError
 
 					#save all the messages in the collection
 					_messages.each {|i| i.save}#foo used to be message.each, which did a deep load
@@ -547,7 +559,7 @@ module Goonbee
 			end
 
 			def save
-				Manager.connected or raise 'Manager not connected'
+				Manager.connected or raise NotConnectedError
 
 				#set updated field only if the core properties have changed
 				if !fault? && !synced_core?
@@ -557,7 +569,7 @@ module Goonbee
 
 				#only save it if it's not a fault, if it hasnt already been saved and if someone holds a ref to it
 				if !fault? && !synced?
-					verify or raise 'Message could not be verified, did NOT save!'
+					verify or raise VerificationFailedError
 
 					_observe(:updated)
 					_notify_observer
