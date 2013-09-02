@@ -191,6 +191,27 @@ module Goonbee
                 Manager.collections.find({:_id=>id}).limit(1).count == 1
             end
 
+            def self.unread_count_for_collections(collection_ids, user_id)
+                #convert them to objectids
+                collection_objectids = collection_ids.map{ |e| BSON::ObjectId.from_string(e) }
+
+                #find all of those collections
+                collections = Manager.collections.find({:_id => {:'$in' => collection_objectids}}, {:fields => {:messages => 1}})
+
+                #get all the message ids for all the collections
+                all_message_ids = []
+                collections.each { |collection| all_message_ids.concat(collection['messages']) }
+
+                #convert those to objectids
+                message_objectids = all_message_ids.map{ |e| BSON::ObjectId.from_string(e) }
+
+                #get the unread count
+                unread_count = Manager.messages.find({:_id => {:'$in' => message_objectids}, :'read' => {'$ne' => user_id}}).count
+
+                #return the count
+                unread_count
+            end
+
             def initialize(opts={})
                 #create a new one
                 super
