@@ -191,6 +191,10 @@ module Goonbee
                 Manager.collections.find({:_id=>id}).limit(1).count == 1
             end
 
+            def self.unread_count_for_collection(collection_id, user_id)            
+                unread_count_for_collections([collection_id], user_id)
+            end
+
             def self.unread_count_for_collections(collection_ids, user_id)
                 #convert them to objectids
                 collection_objectids = collection_ids.map{ |e| BSON::ObjectId.from_string(e) }
