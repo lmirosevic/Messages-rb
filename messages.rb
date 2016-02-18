@@ -62,7 +62,7 @@ module Goonbee
                     @mongo.connect unless @mongo.connected?
 
                     #return main DB
-                    @mongo[ENV['MESSAGES_DATABASE']]
+                    @mongo[ENV['MONGO_DATABASE']]
                 end
 
                 def connected
